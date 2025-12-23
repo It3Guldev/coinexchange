@@ -7,7 +7,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "npm run lightningcss install",
     "clean:node_modules": "rimraf node_modules .next",
     "reinstall": "npm run clean:node_modules && npm install"
   },
