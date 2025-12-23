@@ -1,0 +1,4 @@
+🔑 Got authentication token
+
+🔍 Fetching latest deployment...
+❌ Failed to download source: Error: No deployments found for project: coinexchange
