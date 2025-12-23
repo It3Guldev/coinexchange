@@ -35,7 +35,7 @@ html {
 }
         `}</style>
       </head>
-      <body>
+      <body suppressHydrationWarning={true}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <CurrencyProvider>
             <Web3Modal>

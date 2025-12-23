@@ -135,15 +135,7 @@ export default function CryptoPlatform() {
                 <Wallet className="w-5 h-5" />
                 Connect Wallet
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setShowAuthModal(true)}
-                className="gap-2 text-lg px-8 py-6"
-              >
-                <LogIn className="w-5 h-5" />
-                Sign In / Register
-              </Button>
+
             </div>
             <p className="text-sm text-muted-foreground">
               Connect with 600+ wallets or sign in with email, Google, Apple, and more
@@ -327,16 +319,12 @@ export default function CryptoPlatform() {
           </div>
 
           <div className="flex items-center gap-4">
-            <Badge variant="secondary" className="gap-1">
-              <Shield className="w-3 h-3" />
-              Non-Custodial
-            </Badge>
-
-            <Button variant="ghost" size="sm" onClick={() => setCurrentView("settings")} className="gap-2">
-              <Settings className="w-4 h-4" />
-              Settings
-            </Button>
-
+            {(isAuthenticated || isConnected) && (
+                <Button variant="ghost" size="sm" onClick={() => setCurrentView("settings")} className="gap-2">
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </Button>
+            )}
             {(isAuthenticated || isConnected) && (
               <Button variant="ghost" size="sm" onClick={() => setCurrentView("admin")} className="gap-2">
                 <UserCog className="w-4 h-4" />
@@ -344,36 +332,24 @@ export default function CryptoPlatform() {
               </Button>
             )}
 
-            {/* Updated header to show both wallet and auth status */}
-            {isConnected ? (
-              <div className="flex items-center gap-2">
+            {/* Show wallet connection and auth status */}
+            <div className="flex items-center gap-2">
+              {/* Show wallet status if connected */}
+              {isConnected && (
                 <Badge variant="outline">
                   {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Connected"}
                 </Badge>
-                <Button variant="outline" size="sm" onClick={disconnect}>
-                  Disconnect
-                </Button>
-              </div>
-            ) : (
-              <Button onClick={connect} className="gap-2">
-                <Wallet className="w-4 h-4" />
-                Connect Wallet
-              </Button>
-            )}
+              )}
 
-            {isAuthenticated ? (
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{user?.email}</Badge>
-                <Button variant="outline" size="sm" onClick={logout}>
-                  Sign Out
-                </Button>
-              </div>
-            ) : (
-              <Button onClick={() => setShowAuthModal(true)} variant="outline" className="gap-2">
-                <LogIn className="w-4 h-4" />
-                Sign In
-              </Button>
-            )}
+              {/* Show user email and sign out if authenticated */}
+              {isConnected && (
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={logout}>
+                    Sign Out
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

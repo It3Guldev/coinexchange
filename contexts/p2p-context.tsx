@@ -2,6 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { useKYC } from "./kyc-context"
+import { TradeStatus, StatusUpdateResult, isStatusTransitionAllowed } from "@/types/trade.types"
+
+type DisplayMode = "fiat" | "crypto";
 
 export interface P2PListing {
   id: string
@@ -21,11 +24,12 @@ export interface P2PListing {
   description: string
   terms: string
   status: "active" | "paused" | "completed" | "cancelled"
+  displayMode: DisplayMode
   createdAt: string
   updatedAt: string
   completedTrades: number
   successRate: number
-  sellerAddress?: string // Added seller address for escrow
+  sellerAddress?: string
 }
 
 export interface P2PTrade {
@@ -36,23 +40,13 @@ export interface P2PTrade {
   amount: number
   price: number
   totalValue: number
-  escrowAmount: number // Added escrow amount field for proper escrow display
-  status:
-    | "pending"
-    | "paid"
-    | "confirmed"
-    | "disputed"
-    | "completed"
-    | "cancelled"
-    | "active"
-    | "escrow_paid"
-    | "fiat_paid"
-    | "cancellation_requested" // Added cancellation_requested status
-    | "dispute_review" // Added dispute_review status
-    | "incorrect_escrow" // Added incorrect_escrow status
+  escrowAmount: number
+  status: TradeStatus
   paymentMethod: string
+  cryptocurrency: string
+  fiatCurrency: string
   escrowAddress?: string
-  cancellationRequestedBy?: string // Added cancellation tracking fields
+  cancellationRequestedBy?: string
   createdAt: string
   updatedAt: string
   messages: TradeMessage[]
@@ -68,9 +62,9 @@ export interface TradeMessage {
   timestamp: string
   type: "message" | "system" | "payment_proof"
   attachments?: string[]
-  senderId?: string // Added senderId for message display
-  senderName?: string // Added senderName for message display
-  read?: boolean // Added read status
+  senderId?: string
+  senderName?: string
+  read?: boolean
 }
 
 interface P2PContextType {
@@ -91,7 +85,8 @@ interface P2PContextType {
       | "updatedAt"
       | "completedTrades"
       | "successRate"
-    >,
+      | "displayMode"
+    > & { displayMode?: DisplayMode }
   ) => Promise<{ success: boolean; error?: string }>
   updateListing: (id: string, updates: Partial<P2PListing>) => Promise<{ success: boolean; error?: string }>
   deleteListing: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -102,9 +97,9 @@ interface P2PContextType {
   ) => Promise<{ success: boolean; tradeId?: string; error?: string }>
   updateTradeStatus: (
     tradeId: string,
-    status: P2PTrade["status"],
+    status: TradeStatus,
     requestedBy?: string,
-  ) => Promise<{ success: boolean; error?: string }>
+  ) => Promise<StatusUpdateResult>
   sendTradeMessage: (
     tradeId: string,
     message: string,
@@ -123,6 +118,14 @@ interface P2PContextType {
 
 const P2PContext = createContext<P2PContextType | undefined>(undefined)
 
+function validateDisplayMode(mode: unknown): mode is DisplayMode {
+  return mode === "fiat" || mode === "crypto";
+}
+
+function getDefaultDisplayMode(listing: Omit<P2PListing, 'displayMode'>): DisplayMode {
+  return listing.type === 'buy' ? 'fiat' : 'crypto';
+}
+
 export function P2PProvider({ children }: { children: ReactNode }) {
   const [listings, setListings] = useState<P2PListing[]>([])
   const [myListings, setMyListings] = useState<P2PListing[]>([])
@@ -138,7 +141,6 @@ export function P2PProvider({ children }: { children: ReactNode }) {
   const loadListings = async () => {
     try {
       setIsLoading(true)
-      // Mock data - would be API call in production
       const mockListings: P2PListing[] = [
         {
           id: "1",
@@ -158,11 +160,12 @@ export function P2PProvider({ children }: { children: ReactNode }) {
           description: "Selling Bitcoin at competitive rates. Fast and reliable service.",
           terms: "Payment must be made within 30 minutes. No chargebacks accepted.",
           status: "active",
+          displayMode: "crypto",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           completedTrades: 47,
           successRate: 98.5,
-          sellerAddress: "0x1234...5678", // Added seller address
+          sellerAddress: "0x1234...5678",
         },
         {
           id: "2",
@@ -182,11 +185,12 @@ export function P2PProvider({ children }: { children: ReactNode }) {
           description: "Looking to buy Ethereum. Verified buyer with excellent track record.",
           terms: "Quick payment guaranteed. Prefer bank transfers for large amounts.",
           status: "active",
+          displayMode: "fiat",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           completedTrades: 23,
           successRate: 100,
-          sellerAddress: "0x5678...9012", // Added seller address
+          sellerAddress: "0x5678...9012",
         },
       ]
       setListings(mockListings)
@@ -198,7 +202,6 @@ export function P2PProvider({ children }: { children: ReactNode }) {
   }
 
   const loadMyData = async () => {
-    // Load user's listings and trades
     const savedListings = localStorage.getItem("my_p2p_listings")
     const savedTrades = localStorage.getItem("my_p2p_trades")
 
@@ -224,78 +227,75 @@ export function P2PProvider({ children }: { children: ReactNode }) {
       | "updatedAt"
       | "completedTrades"
       | "successRate"
-    >,
+      | "displayMode"
+    > & { displayMode?: DisplayMode }
   ) => {
     try {
-      const defaultAddress = localStorage.getItem("defaultReceivingAddress") || "0x1234...5678"
+      const displayMode = validateDisplayMode(listingData.displayMode)
+        ? listingData.displayMode
+        : getDefaultDisplayMode(listingData);
 
       const newListing: P2PListing = {
         ...listingData,
         id: Date.now().toString(),
         userId: "current-user",
-        userAddress: defaultAddress,
-        userName: "You",
-        userTrustScore: getTrustScore(),
-        userVerificationLevel: getVerificationLevel(),
+        userAddress: "user-address",
+        userName: "Current User",
+        userTrustScore: 0.95,
+        userVerificationLevel: 2,
+        displayMode,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         completedTrades: 0,
         successRate: 0,
-        sellerAddress: defaultAddress, // Added seller address from user settings
-      }
+      };
 
-      const updatedMyListings = [...myListings, newListing]
-      setMyListings(updatedMyListings)
-      localStorage.setItem("my_p2p_listings", JSON.stringify(updatedMyListings))
-
-      // Add to global listings
-      setListings((prev) => [...prev, newListing])
-
+      const updatedListings = [...listings, newListing]
+      setListings(updatedListings)
       return { success: true }
     } catch (error) {
+      console.error("Error creating listing:", error)
       return { success: false, error: "Failed to create listing" }
     }
   }
 
   const updateListing = async (id: string, updates: Partial<P2PListing>) => {
     try {
-      const updatedMyListings = myListings.map((listing) =>
-        listing.id === id ? { ...listing, ...updates, updatedAt: new Date().toISOString() } : listing,
-      )
-      setMyListings(updatedMyListings)
-      localStorage.setItem("my_p2p_listings", JSON.stringify(updatedMyListings))
+      if ('displayMode' in updates && !validateDisplayMode(updates.displayMode)) {
+        console.warn('Invalid displayMode value, using default');
+        const listing = listings.find(l => l.id === id);
+        if (listing) {
+          updates.displayMode = getDefaultDisplayMode(listing);
+        } else {
+          updates.displayMode = 'fiat'; // Fallback default
+        }
+      }
 
-      // Update global listings
-      setListings((prev) =>
-        prev.map((listing) =>
-          listing.id === id ? { ...listing, ...updates, updatedAt: new Date().toISOString() } : listing,
-        ),
+      const updatedListings = listings.map(listing =>
+        listing.id === id ? { ...listing, ...updates, updatedAt: new Date().toISOString() } : listing
       )
-
+      setListings(updatedListings)
       return { success: true }
     } catch (error) {
+      console.error("Error updating listing:", error)
       return { success: false, error: "Failed to update listing" }
     }
   }
 
   const deleteListing = async (id: string) => {
     try {
-      const updatedMyListings = myListings.filter((listing) => listing.id !== id)
-      setMyListings(updatedMyListings)
-      localStorage.setItem("my_p2p_listings", JSON.stringify(updatedMyListings))
-
-      // Remove from global listings
-      setListings((prev) => prev.filter((listing) => listing.id !== id))
-
+      const updatedListings = listings.filter(listing => listing.id !== id)
+      setListings(updatedListings)
       return { success: true }
     } catch (error) {
+      console.error("Error deleting listing:", error)
       return { success: false, error: "Failed to delete listing" }
     }
   }
 
   const initiateTrade = async (listingId: string, amount: number, paymentMethod: string) => {
     try {
-      const listing = listings.find((l) => l.id === listingId)
+      const listing = listings.find(l => l.id === listingId)
       if (!listing) {
         return { success: false, error: "Listing not found" }
       }
@@ -313,6 +313,8 @@ export function P2PProvider({ children }: { children: ReactNode }) {
         escrowAmount,
         status: "active",
         paymentMethod,
+        cryptocurrency: listing.cryptocurrency,
+        fiatCurrency: listing.fiatCurrency,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         counterparty: listing.userName,
@@ -344,43 +346,76 @@ export function P2PProvider({ children }: { children: ReactNode }) {
 
       return { success: true, tradeId: newTrade.id }
     } catch (error) {
+      console.error("Error initiating trade:", error)
       return { success: false, error: "Failed to initiate trade" }
     }
   }
 
-  const updateTradeStatus = async (tradeId: string, status: P2PTrade["status"], requestedBy?: string) => {
+  const updateTradeStatus = async (
+    tradeId: string,
+    status: TradeStatus,
+    requestedBy?: string,
+  ): Promise<StatusUpdateResult> => {
     try {
-      const updatedMyTrades = myTrades.map((trade) => {
-        if (trade.id === tradeId) {
-          const updatedTrade = {
-            ...trade,
-            status,
-            updatedAt: new Date().toISOString(),
-            ...(status === "cancellation_requested" && requestedBy ? { cancellationRequestedBy: requestedBy } : {}),
-            ...(status !== "cancellation_requested" ? { cancellationRequestedBy: undefined } : {}),
-          }
+      const tradeIndex = myTrades.findIndex(t => t.id === tradeId)
+      if (tradeIndex === -1) {
+        return {
+          success: false,
+          error: 'Trade not found',
+        };
+      }
 
-          if (updatedTrade.statusHistory) {
-            updatedTrade.statusHistory.push({
-              status,
-              timestamp: new Date().toISOString(),
-              description: getStatusDescription(status, requestedBy),
-            })
-          }
+      const updatedTrades = [...myTrades];
+      const trade = updatedTrades[tradeIndex];
+      const previousStatus = trade.status;
 
-          return updatedTrade
-        }
-        return trade
-      })
+      if (!isStatusTransitionAllowed(previousStatus, status, trade, requestedBy)) {
+        return {
+          success: false,
+          error: `Invalid status transition from ${previousStatus} to ${status}`,
+          previousStatus,
+          newStatus: status,
+        };
+      }
 
-      setMyTrades(updatedMyTrades)
-      localStorage.setItem("my_p2p_trades", JSON.stringify(updatedMyTrades))
+      trade.status = status;
+      trade.updatedAt = new Date().toISOString();
+      
+      if (!trade.statusHistory) {
+        trade.statusHistory = [];
+      }
+      
+      const statusUpdate = {
+        status,
+        timestamp: new Date().toISOString(),
+        description: `Status changed to ${status}` +
+          (requestedBy ? ` by ${requestedBy}` : '')
+      };
+      
+      trade.statusHistory.push(statusUpdate);
 
-      return { success: true }
+      if (status === 'cancellation_requested' && requestedBy) {
+        trade.cancellationRequestedBy = requestedBy;
+      } else if (status === 'cancelled' || status === 'completed') {
+        delete trade.cancellationRequestedBy;
+      }
+
+      setMyTrades(updatedTrades);
+      localStorage.setItem('my_p2p_trades', JSON.stringify(updatedTrades));
+      
+      return {
+        success: true,
+        previousStatus,
+        newStatus: status,
+      };
     } catch (error) {
-      return { success: false, error: "Failed to update trade status" }
+      console.error('Error updating trade status:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update trade status',
+      };
     }
-  }
+  };
 
   const sendTradeMessage = async (tradeId: string, message: string, type: TradeMessage["type"] = "message") => {
     try {
@@ -396,7 +431,7 @@ export function P2PProvider({ children }: { children: ReactNode }) {
         read: false,
       }
 
-      const updatedMyTrades = myTrades.map((trade) =>
+      const updatedMyTrades = myTrades.map(trade =>
         trade.id === tradeId
           ? { ...trade, messages: [...trade.messages, newMessage], updatedAt: new Date().toISOString() }
           : trade,
@@ -406,6 +441,7 @@ export function P2PProvider({ children }: { children: ReactNode }) {
 
       return { success: true }
     } catch (error) {
+      console.error("Error sending message:", error)
       return { success: false, error: "Failed to send message" }
     }
   }
@@ -417,7 +453,7 @@ export function P2PProvider({ children }: { children: ReactNode }) {
     minTrustScore?: number
     paymentMethod?: string
   }) => {
-    return listings.filter((listing) => {
+    return listings.filter(listing => {
       if (filters.type && listing.type !== filters.type) return false
       if (filters.cryptocurrency && listing.cryptocurrency !== filters.cryptocurrency) return false
       if (filters.fiatCurrency && listing.fiatCurrency !== filters.fiatCurrency) return false

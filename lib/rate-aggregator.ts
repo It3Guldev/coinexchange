@@ -10,6 +10,7 @@ export interface TokenRate {
   change24h: number
   provider: string
   timestamp: number
+  volume24h?: number
 }
 
 export interface SwapQuote {

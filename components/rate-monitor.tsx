@@ -36,16 +36,17 @@ export default function RateMonitor({ tokens = ["BTC", "ETH", "USDC", "BNB"], co
     } catch (error) {
       console.error("Failed to fetch rates:", error)
       setError("Network error - using cached data")
+      const now = Date.now()
       setRates(
         [
-          { symbol: "BTC", price: 97000, change24h: 2.5, provider: "Cached", volume24h: 28000000000 },
-          { symbol: "ETH", price: 3800, change24h: -1.2, provider: "Cached", volume24h: 15000000000 },
-          { symbol: "USDC", price: 1.0, change24h: 0.01, provider: "Cached", volume24h: 5000000000 },
-          { symbol: "BNB", price: 720, change24h: 3.8, provider: "Cached", volume24h: 2000000000 },
-          { symbol: "USDT", price: 1.0, change24h: -0.02, provider: "Cached", volume24h: 45000000000 },
-          { symbol: "SOL", price: 240, change24h: 5.2, provider: "Cached", volume24h: 3500000000 },
-          { symbol: "ADA", price: 1.15, change24h: -2.1, provider: "Cached", volume24h: 800000000 },
-          { symbol: "AVAX", price: 52, change24h: 1.8, provider: "Cached", volume24h: 600000000 },
+          { symbol: "BTC", price: 97000, change24h: 2.5, provider: "Cached", volume24h: 28000000000, timestamp: now },
+          { symbol: "ETH", price: 3800, change24h: -1.2, provider: "Cached", volume24h: 15000000000, timestamp: now },
+          { symbol: "USDC", price: 1.0, change24h: 0.01, provider: "Cached", volume24h: 5000000000, timestamp: now },
+          { symbol: "BNB", price: 720, change24h: 3.8, provider: "Cached", volume24h: 2000000000, timestamp: now },
+          { symbol: "USDT", price: 1.0, change24h: -0.02, provider: "Cached", volume24h: 45000000000, timestamp: now },
+          { symbol: "SOL", price: 240, change24h: 5.2, provider: "Cached", volume24h: 3500000000, timestamp: now },
+          { symbol: "ADA", price: 1.15, change24h: -2.1, provider: "Cached", volume24h: 800000000, timestamp: now },
+          { symbol: "AVAX", price: 52, change24h: 1.8, provider: "Cached", volume24h: 600000000, timestamp: now },
         ].filter((rate) => tokens.includes(rate.symbol)),
       )
       setLastUpdate(new Date())

@@ -1,8 +1,8 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import type React from "react"
 
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,14 +15,14 @@ import { useAuth } from "@/contexts/auth-context"
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
-  defaultTab?: "login" | "register"
+  defaultTab?: "login" | "register" | "reset"
 }
 
 export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: AuthModalProps) {
-  const [activeTab, setActiveTab] = useState(defaultTab)
+  const [activeTab, setActiveTab] = useState<"login" | "register" | "reset">(defaultTab)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState("")
 
   // Form states
@@ -32,12 +32,16 @@ export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: Aut
 
   const { login, register, resetPassword, loginWithOAuth } = useAuth()
 
+  useEffect(() => {
+    setActiveTab(defaultTab)
+  }, [defaultTab, isOpen])
+
   if (!isOpen) return null
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
+    setError(null)
 
     const result = await login(loginForm.email, loginForm.password)
 
@@ -52,7 +56,7 @@ export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: Aut
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
+    setError(null)
     setSuccess("")
 
     if (registerForm.password !== registerForm.confirmPassword) {
@@ -81,7 +85,7 @@ export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: Aut
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
+    setError(null)
     setSuccess("")
 
     const result = await resetPassword(resetEmail)
@@ -98,6 +102,12 @@ export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: Aut
     await loginWithOAuth(provider)
   }
 
+  const handleTabChange = (value: string) => {
+    if (value === 'login' || value === 'register' || value === 'reset') {
+      setActiveTab(value);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-md">
@@ -106,7 +116,7 @@ export default function AuthModal({ isOpen, onClose, defaultTab = "login" }: Aut
           <CardDescription>Sign in to your account or create a new one</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="login">Login</TabsTrigger>
               <TabsTrigger value="register">Register</TabsTrigger>

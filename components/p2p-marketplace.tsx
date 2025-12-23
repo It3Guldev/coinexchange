@@ -25,9 +25,9 @@ import {
   TrendingUp,
   MessageCircle,
 } from "lucide-react"
-import { useP2P, type P2PListing, type P2PTrade } from "@/contexts/p2p-context"
+import { useP2P, type P2PListing, type P2PTrade, type TradeMessage } from "@/contexts/p2p-context"
 import { useCurrency } from "@/contexts/currency-context"
-import { createEscrow, updateTradeStatus } from "@/services/trade-service" // Assuming these functions are imported from a service file
+import { createEscrow } from "@/services/trade-service"
 
 interface P2PMarketplaceProps {
   onBack: () => void
@@ -46,6 +46,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
     searchListings,
     sendTradeMessage,
     refreshTrades,
+    updateTradeStatus,
   } = useP2P()
 
   const { currency, convertPrice, formatPrice } = useCurrency()
@@ -103,7 +104,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
     const result = await createListing({
       type: newListing.type,
       cryptocurrency: newListing.cryptocurrency,
-      fiatCurrency: newListing.fiatCurrency, // Use newListing.fiatCurrency instead of currency
+      fiatCurrency: newListing.fiatCurrency,
       amount: finalAmount,
       price: Number.parseFloat(newListing.price),
       minOrder: finalMinOrder,
@@ -111,8 +112,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
       paymentMethods: newListing.paymentMethods,
       description: newListing.description,
       terms: newListing.terms,
-      status: "active",
-      displayMode: displayMode, // Store the display mode used when creating
+      status: "active"
     })
 
     if (result.success) {
@@ -140,22 +140,36 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
 
   const handleInitiateTrade = async (listing: P2PListing, amount: number, paymentMethod: string) => {
     const result = await initiateTrade(listing.id, amount, paymentMethod)
-    if (result.success) {
-      const escrowResult = await createEscrow({
-        tradeId: result.tradeId,
-        amount: amount,
-        buyerAddress: address || localStorage.getItem("defaultReceivingAddress") || "",
-        sellerAddress: listing.sellerAddress || "",
-        cryptoType: listing.crypto,
-      })
+    
+    if (!result.success) {
+      setMessage(result.error || "Failed to initiate trade")
+      setTimeout(() => setMessage(""), 3000)
+      return
+    }
 
+    if (!result.tradeId) {
+      setMessage("Error: Trade ID was not returned from the server")
+      setTimeout(() => setMessage(""), 3000)
+      return
+    }
+
+    const escrowResult = await createEscrow({
+      tradeId: result.tradeId,
+      amount: amount,
+      buyerAddress: address || localStorage.getItem("defaultReceivingAddress") || "",
+      sellerAddress: listing.sellerAddress || "",
+      cryptoType: listing.cryptocurrency,
+    })
+
+    if (escrowResult.success) {
       setMessage("Trade initiated successfully! Escrow contract created.")
       setSelectedListing(null)
       setActiveTab("trades")
-      setTimeout(() => setMessage(""), 3000)
     } else {
-      setMessage(result.error || "Failed to initiate trade")
+      setMessage(escrowResult.error || "Failed to create escrow contract")
     }
+    
+    setTimeout(() => setMessage(""), 3000)
   }
 
   const handleSendMessage = async (tradeId: string, message: string) => {
@@ -167,12 +181,16 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
       setNewMessage("")
 
       if (selectedTrade && selectedTrade.id === tradeId) {
-        const newMessageObj = {
+        const newMessageObj: TradeMessage = {
           id: Date.now().toString(),
-          senderId: "current-user", // In a real app, this would be the actual user ID
+          tradeId,
+          userId: "current-user",
           message: message.trim(),
           timestamp: new Date().toISOString(),
-          read: false,
+          type: "message",
+          senderId: "current-user",
+          senderName: "You",
+          read: false
         }
 
         const updatedTrade = {
@@ -211,17 +229,38 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
     const trade = myTrades.find((t) => t.id === tradeId)
     if (!trade) return
 
+    // Get the associated listing to access cryptocurrency info
+    const listing = listings.find((l) => l.id === trade.listingId)
+    if (!listing) {
+      toast({
+        title: "Error",
+        description: "Could not find the associated listing for this trade.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if escrowAddress is defined
+    if (!trade.escrowAddress) {
+      toast({
+        title: "Error",
+        description: "Escrow address is not available for this trade.",
+        variant: "destructive",
+      })
+      return
+    }
+
     // Simulate blockchain verification of exact amount with 1 confirmation
     const requiredAmount = trade.escrowAmount
     const receivedAmount = await simulateBlockchainCheck(trade.escrowAddress)
 
     if (Math.abs(receivedAmount - requiredAmount) > 0.00000001) {
       // Amount doesn't match exactly - refund and cancel
-      const result = await updateTradeStatus(tradeId, "incorrect_escrow")
+      const result = await updateTradeStatus(tradeId, "incorrect_escrow" as const)
       if (result.success) {
         toast({
           title: "Incorrect Escrow Amount",
-          description: `Expected ${requiredAmount} ${trade.cryptocurrency}, received ${receivedAmount}. Trade cancelled and escrow refunded.`,
+          description: `Expected ${requiredAmount} ${listing.cryptocurrency}, received ${receivedAmount}. Trade cancelled and escrow refunded.`,
           variant: "destructive",
         })
         await refreshTrades()
@@ -230,7 +269,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
     }
 
     // Automatically confirm after 1 blockchain confirmation
-    const result = await updateTradeStatus(tradeId, "escrow_paid")
+    const result = await updateTradeStatus(tradeId, "escrow_paid" as const)
     if (result.success) {
       toast({
         title: "Escrow Payment Confirmed",
@@ -260,12 +299,12 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
     try {
       if (trade.status === "cancellation_requested") {
         // Check if current user requested the cancellation
-        const currentUserRequested = trade.cancellationRequestedBy === "current_user"
+        const currentUserRequested = trade.cancellationRequestedBy === "current-user"
 
         if (currentUserRequested) {
           // Cancel own cancellation request
           console.log("Cancelling own cancellation request")
-          const result = await updateTradeStatus(tradeId, "escrow_paid")
+          const result = await updateTradeStatus(tradeId, "escrow_paid" as const)
           console.log("Cancel cancellation result:", result)
 
           if (result.success) {
@@ -294,7 +333,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
           if (accept) {
             // Accept cancellation - refund escrow if paid
             console.log("Accepting cancellation")
-            const result = await updateTradeStatus(tradeId, "cancelled")
+            const result = await updateTradeStatus(tradeId, "cancelled" as const)
             console.log("Accept cancellation result:", result)
 
             if (result.success) {
@@ -314,7 +353,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
           } else {
             // Decline cancellation - flag for admin review
             console.log("Declining cancellation")
-            const result = await updateTradeStatus(tradeId, "dispute_review")
+            const result = await updateTradeStatus(tradeId, "dispute_review" as const)
             console.log("Decline cancellation result:", result)
 
             if (result.success) {
@@ -337,7 +376,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
       } else {
         // Request cancellation
         console.log("Requesting cancellation")
-        const result = await updateTradeStatus(tradeId, "cancellation_requested", "current_user")
+        const result = await updateTradeStatus(tradeId, "cancellation_requested" as const, "current-user")
         console.log("Request cancellation result:", result)
 
         if (result.success) {
@@ -346,7 +385,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
             description: "Cancellation request sent to the other party.",
           })
           setSelectedTrade((prev) =>
-            prev ? { ...prev, status: "cancellation_requested", cancellationRequestedBy: "current_user" } : null,
+            prev ? { ...prev, status: "cancellation_requested", cancellationRequestedBy: "current-user" } : null,
           )
           await refreshTrades()
         } else {
@@ -368,7 +407,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
   }
 
   const handleMarkFiatPaid = async (tradeId: string) => {
-    const result = await updateTradeStatus(tradeId, "fiat_paid")
+    const result = await updateTradeStatus(tradeId, "fiat_paid" as const)
     if (result.success) {
       toast({
         title: "Fiat Payment Marked",
@@ -379,7 +418,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
   }
 
   const handleReleaseEscrow = async (tradeId: string) => {
-    const result = await updateTradeStatus(tradeId, "completed")
+    const result = await updateTradeStatus(tradeId, "completed" as const)
     if (result.success) {
       toast({
         title: "Escrow Released",
@@ -834,7 +873,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
               <div>
                 <Label className="text-sm text-muted-foreground">Amount Available</Label>
                 <div className="text-lg font-semibold">
-                  {Number.parseFloat(selectedListing.amount).toLocaleString(undefined, {
+                  {Number(selectedListing.amount).toLocaleString(undefined, {
                     maximumFractionDigits: 8,
                     minimumFractionDigits: 0,
                   })}{" "}
@@ -854,8 +893,8 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                 <Label className="text-sm text-muted-foreground">Min Order</Label>
                 <div className="font-medium">
                   {selectedListing.displayMode === "fiat"
-                    ? formatPrice(selectedListing.minOrder * selectedListing.price, selectedListing.fiatCurrency)
-                    : `${Number.parseFloat(selectedListing.minOrder).toLocaleString(undefined, {
+                    ? `${formatPrice(selectedListing.minOrder * selectedListing.price)} ${selectedListing.fiatCurrency}`
+                    : `${Number(selectedListing.minOrder).toLocaleString(undefined, {
                         maximumFractionDigits: 8,
                         minimumFractionDigits: 0,
                       })} ${selectedListing.cryptocurrency}`}
@@ -865,8 +904,8 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                 <Label className="text-sm text-muted-foreground">Max Order</Label>
                 <div className="font-medium">
                   {selectedListing.displayMode === "fiat"
-                    ? formatPrice(selectedListing.maxOrder * selectedListing.price, selectedListing.fiatCurrency)
-                    : `${Number.parseFloat(selectedListing.maxOrder).toLocaleString(undefined, {
+                    ? `${formatPrice(selectedListing.maxOrder * selectedListing.price)} ${selectedListing.fiatCurrency}`
+                    : `${Number(selectedListing.maxOrder).toLocaleString(undefined, {
                         maximumFractionDigits: 8,
                         minimumFractionDigits: 0,
                       })} ${selectedListing.cryptocurrency}`}
@@ -993,9 +1032,9 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                           typeof selectedTrade.totalValue === "number"
                             ? selectedTrade.totalValue
                             : Number.parseFloat(String(selectedTrade.totalValue || "0").replace(/[^\d.-]/g, "")),
-                          selectedTrade.fiatCurrency || "USD",
-                        ),
-                      )}
+                          selectedTrade.fiatCurrency || 'USD',
+                        )
+                      )} {selectedTrade.fiatCurrency || 'USD'}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -1051,7 +1090,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                     onClick={() => handleCancelTrade(selectedTrade.id)}
                   >
                     {selectedTrade.status === "cancellation_requested"
-                      ? selectedTrade.cancellationRequestedBy === "current_user"
+                      ? selectedTrade.cancellationRequestedBy === "current-user"
                         ? "Cancel Cancellation Request"
                         : "Respond to Cancellation Request"
                       : "Request Trade Cancellation"}
@@ -1061,7 +1100,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                 {selectedTrade.status === "cancellation_requested" && (
                   <div className="text-center space-y-1">
                     <p className="text-xs text-orange-600">
-                      {selectedTrade.cancellationRequestedBy === "current_user"
+                      {selectedTrade.cancellationRequestedBy === "current-user"
                         ? "You have requested to cancel this trade"
                         : "The other party has requested to cancel this trade"}
                     </p>
@@ -1199,7 +1238,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                         <div>
                           <Label className="text-xs text-muted-foreground">Amount</Label>
                           <div className="font-medium">
-                            {Number.parseFloat(listing.amount).toLocaleString(undefined, {
+                            {Number(listing.amount).toLocaleString(undefined, {
                               maximumFractionDigits: 8,
                               minimumFractionDigits: 0,
                             })}{" "}
@@ -1216,8 +1255,8 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                           <Label className="text-xs text-muted-foreground">Range</Label>
                           <div className="text-sm">
                             {listing.displayMode === "fiat"
-                              ? `${formatPrice(listing.minOrder * listing.price, listing.fiatCurrency)} - ${formatPrice(listing.maxOrder * listing.price, listing.fiatCurrency)}`
-                              : `${Number.parseFloat(listing.minOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} - ${Number.parseFloat(listing.maxOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} ${listing.cryptocurrency}`}
+                              ? `${formatPrice(listing.minOrder * listing.price)} - ${formatPrice(listing.maxOrder * listing.price)} ${listing.fiatCurrency}`
+                              : `${Number(listing.minOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} - ${Number(listing.maxOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} ${listing.cryptocurrency}`}
                           </div>
                         </div>
                         <div>
@@ -1256,7 +1295,7 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                         <div>
                           <Label className="text-xs text-muted-foreground">Amount</Label>
                           <div className="font-medium">
-                            {Number.parseFloat(listing.amount).toLocaleString(undefined, {
+                            {Number(listing.amount).toLocaleString(undefined, {
                               maximumFractionDigits: 8,
                               minimumFractionDigits: 0,
                             })}{" "}
@@ -1273,8 +1312,8 @@ export default function P2PMarketplace({ onBack }: P2PMarketplaceProps) {
                           <Label className="text-xs text-muted-foreground">Range</Label>
                           <div className="text-sm">
                             {listing.displayMode === "fiat"
-                              ? `${formatPrice(listing.minOrder * listing.price, listing.fiatCurrency)} - ${formatPrice(listing.maxOrder * listing.price, listing.fiatCurrency)}`
-                              : `${Number.parseFloat(listing.minOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} - ${Number.parseFloat(listing.maxOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} ${listing.cryptocurrency}`}
+                              ? `${formatPrice(listing.minOrder * listing.price)} - ${formatPrice(listing.maxOrder * listing.price)} ${listing.fiatCurrency}`
+                              : `${Number(listing.minOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} - ${Number(listing.maxOrder).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })} ${listing.cryptocurrency}`}
                           </div>
                         </div>
                       </div>

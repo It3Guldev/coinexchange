@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -29,8 +29,61 @@ export default function KYCVerification({ onBack }: KYCVerificationProps) {
   } = useKYC()
 
   const [activeTab, setActiveTab] = useState("overview")
-  const [formData, setFormData] = useState(kycData)
+  const [formData, setFormData] = useState(() => ({
+    ...kycData,
+    address: {
+      street: kycData.address?.street || "",
+      city: kycData.address?.city || "",
+      state: kycData.address?.state || "",
+      postalCode: kycData.address?.postalCode || "",
+      country: kycData.address?.country || "",
+      ...kycData.address
+    },
+    driversLicense: {
+      number: kycData.driversLicense?.number || "",
+      state: kycData.driversLicense?.state || "",
+      country: kycData.driversLicense?.country || "",
+      expiryDate: kycData.driversLicense?.expiryDate || "",
+      ...kycData.driversLicense
+    },
+    passport: {
+      number: kycData.passport?.number || "",
+      country: kycData.passport?.country || "",
+      issueDate: kycData.passport?.issueDate || "",
+      expiryDate: kycData.passport?.expiryDate || "",
+      ...kycData.passport
+    }
+  }))
   const [message, setMessage] = useState("")
+
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      ...kycData,
+      address: {
+        street: kycData.address?.street || "",
+        city: kycData.address?.city || "",
+        state: kycData.address?.state || "",
+        postalCode: kycData.address?.postalCode || "",
+        country: kycData.address?.country || "",
+        ...kycData.address
+      },
+      driversLicense: {
+        number: kycData.driversLicense?.number || "",
+        state: kycData.driversLicense?.state || "",
+        country: kycData.driversLicense?.country || "",
+        expiryDate: kycData.driversLicense?.expiryDate || "",
+        ...kycData.driversLicense
+      },
+      passport: {
+        number: kycData.passport?.number || "",
+        country: kycData.passport?.country || "",
+        issueDate: kycData.passport?.issueDate || "",
+        expiryDate: kycData.passport?.expiryDate || "",
+        ...kycData.passport
+      }
+    }))
+  }, [kycData])
 
   const handleSave = async (section: string) => {
     const result = await updateKYCData(formData)
