@@ -41,7 +41,7 @@
     "@radix-ui/react-tooltip": "1.1.6",
     "@tanstack/react-query": "latest",
     "@tanstack/query-core": "5.90.10",
-    "@wagmi/connectors": "^2.0.1",
+    "@wagmi/connectors": "^2.0.0",
     "@wagmi/core": "^2.2.1",
     "@web3modal/ethereum": "^2.7.1",
     "@web3modal/wagmi": "^5.1.11",
